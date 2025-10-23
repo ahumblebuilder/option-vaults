@@ -28,6 +28,27 @@ contract OptionVaultFactory is Ownable, EIP712 {
     error NoBalance();
     error Expired();
     error QuoteIdAlreadyFilled();
+    error AboveMaxDeposit();
+    error BelowMinDeposit();
+    error InsufficenUserBalance();
+    error InsufficientUserAllowance();
+    error InsufficientSignerBalance();
+    error InsufficientSignerAllowance();
+
+    enum PreviewStatus {
+        SUCCESS,
+        UNKNOWN_VAULT,
+        EXPIRED_SIGNATURE,
+        ALREADY_FILLED,
+        QUOTE_ID_ALREADY_FILLED,
+        BAD_SIGNATURE,
+        BELOW_MIN_DEPOSIT,
+        ABOVE_MAX_DEPOSIT,
+        INSUFFICIENT_USER_BALANCE,
+        INSUFFICIENT_USER_ALLOWANCE,
+        INSUFFICIENT_SIGNER_BALANCE,
+        INSUFFICIENT_SIGNER_ALLOWANCE
+    }
 
     // EIP712 type hash for WriteOption message
     bytes32 private constant WRITE_OPTION_TYPEHASH =
@@ -92,7 +113,20 @@ contract OptionVaultFactory is Ownable, EIP712 {
                                 USER ACTIONS
     //////////////////////////////////////////////////////////////*/
 
-    function writeOption(
+    /// @notice Preview a writeOption transaction to check if it would succeed
+    /// @param user The user who would be writing the option (msg.sender in actual writeOption)
+    /// @param vault The vault address
+    /// @param amount The amount to write
+    /// @param premiumPerUnit Premium per unit
+    /// @param minDeposit Minimum deposit amount
+    /// @param maxDeposit Maximum deposit amount
+    /// @param validUntil Timestamp until which the signature is valid
+    /// @param quoteId Unique identifier for the quote
+    /// @param signature The signature to verify
+    /// @return status The preview status
+    /// @return totalPremium The total premium that would be received
+    function previewWriteOption(
+        address user,
         address vault,
         uint256 amount,
         uint256 premiumPerUnit,
@@ -101,13 +135,38 @@ contract OptionVaultFactory is Ownable, EIP712 {
         uint256 validUntil,
         uint256 quoteId,
         bytes calldata signature
-    ) external {
-        if (!_knownVaults[vault]) revert UnknownVault();
+    ) external view returns (PreviewStatus status, uint256 totalPremium) {
+        // Check if vault is known
+        if (!_knownVaults[vault]) {
+            return (PreviewStatus.UNKNOWN_VAULT, 0);
+        }
 
         OptionVault v = OptionVault(vault);
-        if (block.timestamp > validUntil) revert Expired();
 
-        // recover signer using EIP712
+        // Check if signature is expired
+        if (block.timestamp > validUntil) {
+            return (PreviewStatus.EXPIRED_SIGNATURE, 0);
+        }
+
+        // Check if amount is within bounds
+        if (amount < minDeposit) {
+            return (PreviewStatus.BELOW_MIN_DEPOSIT, 0);
+        }
+        if (amount > maxDeposit) {
+            return (PreviewStatus.ABOVE_MAX_DEPOSIT, 0);
+        }
+        // Calculate total premium
+        totalPremium = (premiumPerUnit * amount) / (10 ** ERC20(address(v.depositToken())).decimals());
+
+        // Check user balance and allowance
+        if (v.depositToken().balanceOf(user) < amount) {
+            return (PreviewStatus.INSUFFICIENT_USER_BALANCE, totalPremium);
+        }
+        if (v.depositToken().allowance(user, address(this)) < amount) {
+            return (PreviewStatus.INSUFFICIENT_USER_ALLOWANCE, totalPremium);
+        }
+
+        // Recover signer and check signature
         (bytes32 digest, address signer) = computeWriteOptionHashAndRecover(
             v.strike(),
             v.expiry(),
@@ -118,23 +177,94 @@ contract OptionVaultFactory is Ownable, EIP712 {
             quoteId,
             signature
         );
-        if (_isUsed[digest]) revert AlreadyFilled();
-        if (signer == address(0)) revert BadSignature();
-        if (_usedQuoteIds[vault][signer][quoteId]) revert QuoteIdAlreadyFilled();
 
+        if (signer == address(0)) {
+            return (PreviewStatus.BAD_SIGNATURE, totalPremium);
+        }
+
+        // Check if signature has already been used
+        if (_isUsed[digest]) {
+            return (PreviewStatus.ALREADY_FILLED, totalPremium);
+        }
+
+        // Check if quoteId has already been used
+        if (_usedQuoteIds[vault][signer][quoteId]) {
+            return (PreviewStatus.QUOTE_ID_ALREADY_FILLED, totalPremium);
+        }
+
+        // Check signer balance and allowance for premium
+        if (v.premiumToken().balanceOf(signer) < totalPremium) {
+            return (PreviewStatus.INSUFFICIENT_SIGNER_BALANCE, totalPremium);
+        }
+        if (v.premiumToken().allowance(signer, address(this)) < totalPremium) {
+            return (PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE, totalPremium);
+        }
+
+        return (PreviewStatus.SUCCESS, totalPremium);
+    }
+
+    function writeOption(
+        address vault,
+        uint256 amount,
+        uint256 premiumPerUnit,
+        uint256 minDeposit,
+        uint256 maxDeposit,
+        uint256 validUntil,
+        uint256 quoteId,
+        bytes calldata signature
+    ) external {
+        // Use preview to check all conditions and get premium
+        (PreviewStatus status, uint256 totalPremium) = this.previewWriteOption(
+            msg.sender,
+            vault,
+            amount,
+            premiumPerUnit,
+            minDeposit,
+            maxDeposit,
+            validUntil,
+            quoteId,
+            signature
+        );
+
+        // Revert with appropriate error based on preview status
+        if (status == PreviewStatus.UNKNOWN_VAULT) revert UnknownVault();
+        if (status == PreviewStatus.EXPIRED_SIGNATURE) revert Expired();
+        if (status == PreviewStatus.ALREADY_FILLED) revert AlreadyFilled();
+        if (status == PreviewStatus.QUOTE_ID_ALREADY_FILLED) revert QuoteIdAlreadyFilled();
+        if (status == PreviewStatus.BAD_SIGNATURE) revert BadSignature();
+        if (status == PreviewStatus.ABOVE_MAX_DEPOSIT) revert AboveMaxDeposit();
+        if (status == PreviewStatus.BELOW_MIN_DEPOSIT) revert BelowMinDeposit();
+        if (status == PreviewStatus.INSUFFICIENT_USER_BALANCE) revert InsufficenUserBalance();
+        if (status == PreviewStatus.INSUFFICIENT_USER_ALLOWANCE) revert InsufficientUserAllowance();
+        if (status == PreviewStatus.INSUFFICIENT_SIGNER_BALANCE) revert InsufficientSignerBalance();
+        if (status == PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE) revert InsufficientSignerAllowance();
+        if (status != PreviewStatus.SUCCESS) revert BadSignature(); // Fallback
+
+        OptionVault v = OptionVault(vault);
+
+        // Mark as used (preview already verified these are safe)
+        (bytes32 digest, address signer) = computeWriteOptionHashAndRecover(
+            v.strike(),
+            v.expiry(),
+            premiumPerUnit,
+            minDeposit,
+            maxDeposit,
+            validUntil,
+            quoteId,
+            signature
+        );
         _isUsed[digest] = true;
         _usedQuoteIds[vault][signer][quoteId] = true;
 
-        // send premium from signer to user
-        uint256 premium = (premiumPerUnit * amount) / (10 ** ERC20(address(v.depositToken())).decimals());
-        _pullTokens(v.premiumToken(), signer, msg.sender, premium);
+        // send premium from signer to user (use totalPremium from preview)
+        _pullTokens(v.premiumToken(), signer, msg.sender, totalPremium);
 
         // mint receipts
         v.onWriteOption(msg.sender, amount);
 
         // pull deposit tokens from user to vault
         _pullTokens(v.depositToken(), msg.sender, vault, amount);
-        emit OptionWritten(vault, msg.sender, signer, amount, premium);
+        emit OptionWritten(vault, msg.sender, signer, amount, totalPremium);
     }
 
     /// @notice owner exercises through factory

@@ -568,6 +568,223 @@ describe('OptionVault System', function () {
     });
   });
 
+  describe('Preview Write Option', function () {
+    beforeEach(async function () {
+      await setupTestEnvironment();
+    });
+
+    it('Should preview successful writeOption', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Preview the transaction - call from user1's context
+      const [status, totalPremium] = await optionVaultFactory
+        .connect(user1)
+        .previewWriteOption(
+          user1.address,
+          await vault1.getAddress(),
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          signature
+        );
+
+      expect(status).to.equal(0); // PreviewStatus.SUCCESS
+      expect(totalPremium).to.equal(ethers.parseUnits('300', 6)); // 150 * 2 = 300 USDC
+    });
+
+    it('Should preview insufficient user balance', async function () {
+      // Transfer away most of user1's WETH to create insufficient balance
+      await weth.connect(user1).transfer(owner.address, ethers.parseEther('99'));
+
+      const amount = ethers.parseEther('5'); // User only has 1 WETH left
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Preview the transaction - call from user1's context
+      const [status, totalPremium] = await optionVaultFactory
+        .connect(user1)
+        .previewWriteOption(
+          user1.address,
+          await vault1.getAddress(),
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          signature
+        );
+
+      expect(status).to.equal(8); // PreviewStatus.INSUFFICIENT_USER_BALANCE
+      expect(totalPremium).to.equal(ethers.parseUnits('750', 6)); // 150 * 5 = 750 USDC
+    });
+
+    it('Should preview insufficient signer allowance', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve only user tokens, not signer tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      // Don't approve signer tokens
+
+      // Preview the transaction - call from user1's context
+      const [status, totalPremium] = await optionVaultFactory
+        .connect(user1)
+        .previewWriteOption(
+          user1.address,
+          await vault1.getAddress(),
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          signature
+        );
+
+      expect(status).to.equal(11); // PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE
+      expect(totalPremium).to.equal(ethers.parseUnits('300', 6)); // 150 * 2 = 300 USDC
+    });
+
+    it('Should preview unknown vault', async function () {
+      const randomAddress = ethers.Wallet.createRandom().address;
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      // Preview the transaction - call from user1's context
+      const [status, totalPremium] = await optionVaultFactory
+        .connect(user1)
+        .previewWriteOption(
+          user1.address,
+          randomAddress,
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          '0x'
+        );
+
+      expect(status).to.equal(1); // PreviewStatus.UNKNOWN_VAULT
+      expect(totalPremium).to.equal(0);
+    });
+  });
+
   describe('Write Option Flow', function () {
     beforeEach(async function () {
       await setupTestEnvironment();
@@ -1248,9 +1465,8 @@ describe('OptionVault System', function () {
       const maxDeposit = ethers.parseEther('10');
       const validUntil = await getFutureTimestampHours(2); // 2 hours
 
-      // User1 writes 0.2 WETH (10% of 2 WETH total)
-      const user1Amount = ethers.parseEther('0.2');
-      const user2Amount = ethers.parseEther('1.8'); // 90% of 2 WETH total
+      const user1Amount = minDeposit; // 10% of total
+      const user2Amount = minDeposit * 9n; // 90% of total
 
       // Create signatures for both users
       const domain = {
@@ -1361,8 +1577,8 @@ describe('OptionVault System', function () {
       const maxDeposit = ethers.parseEther('10');
       const validUntil = await getFutureTimestampHours(2); // 2 hours
 
-      const user1Amount = ethers.parseEther('0.2'); // 10%
-      const user2Amount = ethers.parseEther('1.8'); // 90%
+      const user1Amount = minDeposit; // 10%
+      const user2Amount = minDeposit * 9n; // 90%
       const totalAmount = user1Amount + user2Amount;
 
       // Create and execute writeOptions for both users
