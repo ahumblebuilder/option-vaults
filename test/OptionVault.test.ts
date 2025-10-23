@@ -333,7 +333,7 @@ describe('OptionVault System', function () {
       const premiumPerUnit = ethers.parseUnits('150', 6); // 150 USDC per unit
       const minDeposit = ethers.parseEther('1'); // 1 WETH
       const maxDeposit = ethers.parseEther('10'); // 10 WETH
-      const validUntil = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+      const validUntil = await getFutureTimestampHours(1); // 1 hour from now
       const amount = ethers.parseEther('2'); // 2 WETH
 
       // Get initial balances
@@ -376,6 +376,18 @@ describe('OptionVault System', function () {
       // Calculate expected premium (150 USDC per WETH unit)
       const expectedPremium = (premiumPerUnit * amount) / ethers.parseEther('1');
 
+      console.log('\n=== WRITE OPTION DETAILS ===');
+      console.log('Amount (WETH):', ethers.formatEther(amount));
+      console.log('Amount (raw):', amount.toString());
+      console.log('Premium per unit (USDC):', ethers.formatUnits(premiumPerUnit, 6));
+      console.log('Premium per unit (raw):', premiumPerUnit.toString());
+      console.log('Expected premium (USDC):', ethers.formatUnits(expectedPremium, 6));
+      console.log('Expected premium (raw):', expectedPremium.toString());
+      console.log('Min deposit (WETH):', ethers.formatEther(minDeposit));
+      console.log('Max deposit (WETH):', ethers.formatEther(maxDeposit));
+      console.log('Valid until (timestamp):', validUntil.toString());
+      console.log('Valid until (date):', new Date(Number(validUntil) * 1000).toISOString());
+
       // User1 approves WETH for the factory
       await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
 
@@ -396,6 +408,11 @@ describe('OptionVault System', function () {
 
       const receipt = await tx.wait();
 
+      console.log('\n=== WRITE OPTION RESULTS ===');
+      console.log('Transaction hash:', tx.hash);
+      console.log('Gas used:', receipt.gasUsed.toString());
+      console.log('Block number:', receipt.blockNumber);
+
       // Verify the OptionWritten event was emitted
       const optionWrittenEvent = receipt.logs.find(log => {
         try {
@@ -414,6 +431,28 @@ describe('OptionVault System', function () {
       const finalSignerUsdc = await usdc.balanceOf(signer.address);
       const finalVaultWeth = await weth.balanceOf(await vault1.getAddress());
       const finalVaultUsdc = await usdc.balanceOf(await vault1.getAddress());
+
+      console.log('\n=== BALANCE CHANGES ===');
+      console.log('User1 WETH:');
+      console.log('  Initial:', ethers.formatEther(initialUser1Weth), 'WETH');
+      console.log('  Final:', ethers.formatEther(finalUser1Weth), 'WETH');
+      console.log('  Change:', ethers.formatEther(finalUser1Weth - initialUser1Weth), 'WETH');
+      console.log('User1 USDC:');
+      console.log('  Initial:', ethers.formatUnits(initialUser1Usdc, 6), 'USDC');
+      console.log('  Final:', ethers.formatUnits(finalUser1Usdc, 6), 'USDC');
+      console.log('  Change:', ethers.formatUnits(finalUser1Usdc - initialUser1Usdc, 6), 'USDC');
+      console.log('Signer USDC:');
+      console.log('  Initial:', ethers.formatUnits(initialSignerUsdc, 6), 'USDC');
+      console.log('  Final:', ethers.formatUnits(finalSignerUsdc, 6), 'USDC');
+      console.log('  Change:', ethers.formatUnits(finalSignerUsdc - initialSignerUsdc, 6), 'USDC');
+      console.log('Vault WETH:');
+      console.log('  Initial:', ethers.formatEther(initialVaultWeth), 'WETH');
+      console.log('  Final:', ethers.formatEther(finalVaultWeth), 'WETH');
+      console.log('  Change:', ethers.formatEther(finalVaultWeth - initialVaultWeth), 'WETH');
+      console.log('Vault USDC:');
+      console.log('  Initial:', ethers.formatUnits(initialVaultUsdc, 6), 'USDC');
+      console.log('  Final:', ethers.formatUnits(finalVaultUsdc, 6), 'USDC');
+      console.log('  Change:', ethers.formatUnits(finalVaultUsdc - initialVaultUsdc, 6), 'USDC');
 
       // User1 should have less WETH (deposited to vault)
       expect(finalUser1Weth).to.equal(initialUser1Weth - amount);
@@ -517,6 +556,98 @@ describe('OptionVault System', function () {
             validUntil,
             signature
           )
+      ).to.be.revertedWithCustomError(optionVaultFactory, 'Expired');
+    });
+
+    it('Should reject exercise after expiry', async function () {
+      // First, write an option
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+      const amount = ethers.parseEther('2');
+
+      // Create signature for the offer
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+      const expectedPremium = (premiumPerUnit * amount) / ethers.parseEther('1');
+
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
+
+      await optionVaultFactory
+        .connect(user1)
+        .writeOption(
+          await vault1.getAddress(),
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          signature
+        );
+
+      console.log('\n=== EXERCISE AFTER EXPIRY TEST ===');
+      console.log('Vault expiry:', new Date(Number(await vault1.expiry()) * 1000).toISOString());
+
+      // Fast forward past expiry
+      await hreEthers.provider.send('evm_increaseTime', [15 * 24 * 60 * 60]); // 15 days
+      await hreEthers.provider.send('evm_mine', []);
+
+      const currentTime = await getCurrentBlockTime();
+      console.log(
+        'Current time after fast forward:',
+        new Date(Number(currentTime) * 1000).toISOString()
+      );
+      console.log(
+        'Time past expiry:',
+        (currentTime - Number(await vault1.expiry())).toString(),
+        'seconds'
+      );
+
+      // Try to exercise after expiry - should fail
+      const exerciseAmount = ethers.parseEther('1.5');
+      const cost = (exerciseAmount * (await vault1.strike())) / ethers.parseEther('1');
+
+      console.log(
+        'Attempting to exercise:',
+        ethers.formatEther(exerciseAmount),
+        'WETH for',
+        ethers.formatUnits(cost, 6),
+        'USDC'
+      );
+
+      await usdc.connect(owner).mint(owner.address, cost);
+      await usdc.connect(owner).approve(await optionVaultFactory.getAddress(), cost);
+
+      await expect(
+        optionVaultFactory.connect(owner).exercise(await vault1.getAddress(), exerciseAmount)
       ).to.be.revertedWithCustomError(optionVaultFactory, 'Expired');
     });
   });
@@ -753,11 +884,27 @@ describe('OptionVault System', function () {
       const exerciseAmount = ethers.parseEther('1.5'); // Exercise 1.5 WETH worth
       const cost = (exerciseAmount * (await vault1.strike())) / ethers.parseEther('1');
 
+      console.log('\n=== EXERCISE DETAILS ===');
+      console.log('Exercise amount (WETH):', ethers.formatEther(exerciseAmount));
+      console.log('Exercise amount (raw):', exerciseAmount.toString());
+      console.log('Strike price (USDC):', ethers.formatUnits(await vault1.strike(), 6));
+      console.log('Strike price (raw):', (await vault1.strike()).toString());
+      console.log('Exercise cost (USDC):', ethers.formatUnits(cost, 6));
+      console.log('Exercise cost (raw):', cost.toString());
+
       // Make sure owner has enough USDC for exercise
       await usdc.connect(owner).mint(owner.address, cost);
       await usdc.connect(owner).approve(await optionVaultFactory.getAddress(), cost);
 
-      await optionVaultFactory.connect(owner).exercise(await vault1.getAddress(), exerciseAmount);
+      const exerciseTx = await optionVaultFactory
+        .connect(owner)
+        .exercise(await vault1.getAddress(), exerciseAmount);
+      const exerciseReceipt = await exerciseTx.wait();
+
+      console.log('\n=== EXERCISE RESULTS ===');
+      console.log('Exercise transaction hash:', exerciseTx.hash);
+      console.log('Gas used:', exerciseReceipt.gasUsed.toString());
+      console.log('Block number:', exerciseReceipt.blockNumber);
 
       // Fast forward past expiry
       await hreEthers.provider.send('evm_increaseTime', [15 * 24 * 60 * 60]); // 15 days
@@ -775,14 +922,60 @@ describe('OptionVault System', function () {
       const remainingWeth = amount - exerciseAmount;
       const proRataUsdc = (cost * user1VaultBalance) / totalVaultSupply;
 
+      console.log('\n=== REDEMPTION DETAILS ===');
+      console.log(
+        'User1 vault balance:',
+        ethers.formatEther(await vault1.balanceOf(user1.address)),
+        'vault tokens'
+      );
+      console.log(
+        'Total vault supply:',
+        ethers.formatEther(await vault1.totalSupply()),
+        'vault tokens'
+      );
+      console.log(
+        'Vault WETH balance:',
+        ethers.formatEther(await weth.balanceOf(await vault1.getAddress())),
+        'WETH'
+      );
+      console.log(
+        'Vault USDC balance:',
+        ethers.formatUnits(await usdc.balanceOf(await vault1.getAddress()), 6),
+        'USDC'
+      );
+
       // User1 redeems their tokens
-      await optionVaultFactory.connect(user1).redeem(await vault1.getAddress());
+      const redeemTx = await optionVaultFactory.connect(user1).redeem(await vault1.getAddress());
+      const redeemReceipt = await redeemTx.wait();
+
+      console.log('\n=== REDEMPTION RESULTS ===');
+      console.log('Redemption transaction hash:', redeemTx.hash);
+      console.log('Gas used:', redeemReceipt.gasUsed.toString());
+      console.log('Block number:', redeemReceipt.blockNumber);
 
       // Verify user1 got back their remaining WETH + pro-rata USDC from exercise
       const finalUser1Weth = await weth.balanceOf(user1.address);
       const finalUser1Usdc = await usdc.balanceOf(user1.address);
       const finalVaultWeth = await weth.balanceOf(await vault1.getAddress());
       const finalVaultUsdc = await usdc.balanceOf(await vault1.getAddress());
+
+      console.log('\n=== REDEMPTION BALANCE CHANGES ===');
+      console.log('User1 WETH:');
+      console.log('  Initial:', ethers.formatEther(initialUser1Weth), 'WETH');
+      console.log('  Final:', ethers.formatEther(finalUser1Weth), 'WETH');
+      console.log('  Change:', ethers.formatEther(finalUser1Weth - initialUser1Weth), 'WETH');
+      console.log('User1 USDC:');
+      console.log('  Initial:', ethers.formatUnits(initialUser1Usdc, 6), 'USDC');
+      console.log('  Final:', ethers.formatUnits(finalUser1Usdc, 6), 'USDC');
+      console.log('  Change:', ethers.formatUnits(finalUser1Usdc - initialUser1Usdc, 6), 'USDC');
+      console.log('Vault WETH:');
+      console.log('  Initial:', ethers.formatEther(initialVaultWeth), 'WETH');
+      console.log('  Final:', ethers.formatEther(finalVaultWeth), 'WETH');
+      console.log('  Change:', ethers.formatEther(finalVaultWeth - initialVaultWeth), 'WETH');
+      console.log('Vault USDC:');
+      console.log('  Initial:', ethers.formatUnits(initialVaultUsdc, 6), 'USDC');
+      console.log('  Final:', ethers.formatUnits(finalVaultUsdc, 6), 'USDC');
+      console.log('  Change:', ethers.formatUnits(finalVaultUsdc - initialVaultUsdc, 6), 'USDC');
 
       // User should get back remaining WETH (amount - exerciseAmount)
       expect(finalUser1Weth).to.equal(initialUser1Weth + remainingWeth);
