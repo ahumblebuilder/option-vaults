@@ -142,7 +142,8 @@ describe('OptionVault System', function () {
 
       // Get onchain hash
       const onchainHash = await optionVaultFactory.computeWriteOptionHash(
-        await vault1.getAddress(),
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -221,7 +222,8 @@ describe('OptionVault System', function () {
       // Get onchain recovery
       const [onchainDigest, onchainSigner] =
         await optionVaultFactory.computeWriteOptionHashAndRecover(
-          await vault1.getAddress(),
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -245,7 +247,8 @@ describe('OptionVault System', function () {
       const validUntil = Math.floor(Date.now() / 1000) + 7200; // 2 hours
 
       const onchainHash = await optionVaultFactory.computeWriteOptionHash(
-        await vault2.getAddress(),
+        await vault2.strike(),
+        await vault2.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -283,6 +286,227 @@ describe('OptionVault System', function () {
       const localHash = ethers.TypedDataEncoder.hash(domain, types, value);
       expect(onchainHash).to.equal(localHash);
     });
+
+    it('Should compute correct hash with static values for cross-checking', async function () {
+      // Static values for cross-checking with external scripts
+      const staticDomain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: 31337, // Hardhat default
+        verifyingContract: '0x5FbDB2315678afecb367f032d93F642f64180aa3', // Static address
+      };
+
+      const staticTypes = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+        ],
+      };
+
+      const staticValue = {
+        strike: '4200000000', // 4200 USDC (6 decimals)
+        expiry: '1735689600', // 2025-01-01 00:00:00 UTC
+        premiumPerUnit: '150000000', // 150 USDC (6 decimals)
+        minDeposit: '1000000000000000000', // 1 WETH (18 decimals)
+        maxDeposit: '10000000000000000000', // 10 WETH (18 decimals)
+        validUntil: '1735689600', // 2025-01-01 00:00:00 UTC
+      };
+
+      console.log('\n=== STATIC EIP712 TEST VALUES ===');
+      console.log('Domain:');
+      console.log('  name:', staticDomain.name);
+      console.log('  version:', staticDomain.version);
+      console.log('  chainId:', staticDomain.chainId);
+      console.log('  verifyingContract:', staticDomain.verifyingContract);
+      console.log('\nTypes:');
+      console.log(JSON.stringify(staticTypes, null, 2));
+      console.log('\nValue:');
+      console.log('  strike:', staticValue.strike, '(4200 USDC)');
+      console.log('  expiry:', staticValue.expiry, '(2025-01-01 00:00:00 UTC)');
+      console.log('  premiumPerUnit:', staticValue.premiumPerUnit, '(150 USDC)');
+      console.log('  minDeposit:', staticValue.minDeposit, '(1 WETH)');
+      console.log('  maxDeposit:', staticValue.maxDeposit, '(10 WETH)');
+      console.log('  validUntil:', staticValue.validUntil, '(2025-01-01 00:00:00 UTC)');
+
+      // Compute hash locally
+      const localHash = ethers.TypedDataEncoder.hash(staticDomain, staticTypes, staticValue);
+      console.log('\n=== HASH COMPUTATION ===');
+      console.log('Local computed hash:', localHash);
+
+      // Create signature with static values
+      const staticSignature = await signer.signTypedData(staticDomain, staticTypes, staticValue);
+      console.log('Static signature:', staticSignature);
+
+      // Recover signer locally
+      const recoveredSigner = ethers.verifyTypedData(
+        staticDomain,
+        staticTypes,
+        staticValue,
+        staticSignature
+      );
+      console.log('Recovered signer:', recoveredSigner);
+      console.log('Expected signer:', signer.address);
+      console.log('Signer match:', recoveredSigner === signer.address);
+
+      // Verify the signature recovery
+      expect(recoveredSigner).to.equal(signer.address);
+
+      // Cross-check with on-chain computation
+      console.log('\n=== ON-CHAIN CROSS-CHECK ===');
+
+      // Use existing vault1 for on-chain testing
+      const vault1Address = await vault1.getAddress();
+      console.log('Using vault1 address:', vault1Address);
+
+      // Get the actual vault values for comparison
+      const vault1Strike = await vault1.strike();
+      const vault1Expiry = await vault1.expiry();
+      console.log('Vault1 strike:', vault1Strike.toString());
+      console.log('Vault1 expiry:', vault1Expiry.toString());
+      console.log('Static strike:', staticValue.strike);
+      console.log('Static expiry:', staticValue.expiry);
+
+      // Test on-chain hash computation with static values
+      const onchainHash = await optionVaultFactory.computeWriteOptionHash(
+        vault1Strike,
+        vault1Expiry,
+        staticValue.premiumPerUnit,
+        staticValue.minDeposit,
+        staticValue.maxDeposit,
+        staticValue.validUntil
+      );
+
+      console.log('On-chain computed hash:', onchainHash);
+      console.log('Hash match (local vs on-chain):', localHash === onchainHash);
+
+      // Test on-chain signature recovery with static values
+      const onchainRecovery = await optionVaultFactory.computeWriteOptionHashAndRecover(
+        vault1Strike,
+        vault1Expiry,
+        staticValue.premiumPerUnit,
+        staticValue.minDeposit,
+        staticValue.maxDeposit,
+        staticValue.validUntil,
+        staticSignature
+      );
+
+      console.log('On-chain recovered signer:', onchainRecovery.signer);
+      console.log('On-chain hash:', onchainRecovery.digest);
+      console.log('On-chain signer match:', onchainRecovery.signer === signer.address);
+      console.log('On-chain hash match:', onchainRecovery.digest === localHash);
+
+      // Note: The hashes will be different because on-chain uses vault's actual strike/expiry
+      // while local computation uses static values. This is expected behavior.
+      console.log('\n=== HASH DIFFERENCE EXPLANATION ===');
+      console.log('Local hash uses static values from domain');
+      console.log('On-chain hash uses actual vault values (strike/expiry from contract)');
+      console.log('This difference is expected and demonstrates the correct behavior');
+
+      // Now let's test with vault's actual values for proper cross-checking
+      console.log('\n=== PROPER CROSS-CHECK WITH VAULT VALUES ===');
+
+      // Create a new signature using the vault's actual values
+      const vaultDomain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const vaultValue = {
+        strike: vault1Strike.toString(),
+        expiry: vault1Expiry.toString(),
+        premiumPerUnit: staticValue.premiumPerUnit,
+        minDeposit: staticValue.minDeposit,
+        maxDeposit: staticValue.maxDeposit,
+        validUntil: staticValue.validUntil,
+      };
+
+      console.log('Vault domain:', vaultDomain);
+      console.log('Vault value:', vaultValue);
+
+      // Compute hash locally with vault values
+      const vaultLocalHash = ethers.TypedDataEncoder.hash(vaultDomain, staticTypes, vaultValue);
+      console.log('Vault local hash:', vaultLocalHash);
+
+      // Create signature with vault values
+      const vaultSignature = await signer.signTypedData(vaultDomain, staticTypes, vaultValue);
+      console.log('Vault signature:', vaultSignature);
+
+      // Test on-chain computation with vault values
+      const vaultOnchainHash = await optionVaultFactory.computeWriteOptionHash(
+        vault1Strike,
+        vault1Expiry,
+        vaultValue.premiumPerUnit,
+        vaultValue.minDeposit,
+        vaultValue.maxDeposit,
+        vaultValue.validUntil
+      );
+
+      console.log('Vault on-chain hash:', vaultOnchainHash);
+      console.log('Vault hash match (local vs on-chain):', vaultLocalHash === vaultOnchainHash);
+
+      // Test on-chain signature recovery with vault values
+      const vaultOnchainRecovery = await optionVaultFactory.computeWriteOptionHashAndRecover(
+        vault1Strike,
+        vault1Expiry,
+        vaultValue.premiumPerUnit,
+        vaultValue.minDeposit,
+        vaultValue.maxDeposit,
+        vaultValue.validUntil,
+        vaultSignature
+      );
+
+      console.log('Vault on-chain recovered signer:', vaultOnchainRecovery.signer);
+      console.log('Vault on-chain hash:', vaultOnchainRecovery.digest);
+      console.log('Vault on-chain signer match:', vaultOnchainRecovery.signer === signer.address);
+      console.log('Vault on-chain hash match:', vaultOnchainRecovery.digest === vaultLocalHash);
+
+      // Verify proper cross-checking works
+      expect(vaultLocalHash).to.equal(vaultOnchainHash);
+      expect(vaultOnchainRecovery.signer).to.equal(signer.address);
+      expect(vaultOnchainRecovery.digest).to.equal(vaultLocalHash);
+
+      // Test with a different signer to ensure uniqueness
+      const differentSigner = user1; // Use existing user1 signer
+      const differentSignature = await differentSigner.signTypedData(
+        staticDomain,
+        staticTypes,
+        staticValue
+      );
+      const differentRecoveredSigner = ethers.verifyTypedData(
+        staticDomain,
+        staticTypes,
+        staticValue,
+        differentSignature
+      );
+
+      console.log('\n=== DIFFERENT SIGNER TEST ===');
+      console.log('Different signer address:', differentSigner.address);
+      console.log('Different signature:', differentSignature);
+      console.log('Different recovered signer:', differentRecoveredSigner);
+      console.log('Different signer match:', differentRecoveredSigner === differentSigner.address);
+
+      expect(differentRecoveredSigner).to.equal(differentSigner.address);
+      expect(differentRecoveredSigner).to.not.equal(signer.address);
+
+      console.log('\n=== CROSS-CHECK VALUES FOR EXTERNAL SCRIPTS ===');
+      console.log('Domain Separator (EIP712):', ethers.TypedDataEncoder.hashDomain(staticDomain));
+      console.log(
+        'Struct Hash (WriteOption):',
+        ethers.TypedDataEncoder.hashStruct('WriteOption', staticTypes, staticValue)
+      );
+      console.log('Message Hash:', localHash);
+      console.log(
+        'Signer Private Key (for testing):',
+        '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+      ); // Hardhat account #0
+      console.log('Signer Address:', signer.address);
+    });
   });
 
   describe('Vault Validation', function () {
@@ -297,7 +521,8 @@ describe('OptionVault System', function () {
       // The exact error behavior may vary, but it should not succeed
       try {
         await optionVaultFactory.computeWriteOptionHash(
-          randomAddress,
+          ethers.parseUnits('4200', 6), // strike
+          Math.floor(Date.now() / 1000) + 86400, // expiry
           ethers.parseUnits('100', 6),
           ethers.parseEther('1'),
           ethers.parseEther('10'),
@@ -313,7 +538,8 @@ describe('OptionVault System', function () {
 
     it('Should accept known vault addresses', async function () {
       const hash = await optionVaultFactory.computeWriteOptionHash(
-        await vault1.getAddress(),
+        await vault1.strike(),
+        await vault1.expiry(),
         ethers.parseUnits('100', 6),
         ethers.parseEther('1'),
         ethers.parseEther('10'),

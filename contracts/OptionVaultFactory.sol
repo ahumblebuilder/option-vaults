@@ -69,7 +69,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
         string calldata symbol,
         address owner
     ) external onlyOwner returns (address vaultAddr) {
-        vaultAddr = implementation.clone();
+        vaultAddr = Clones.cloneDeterministic(implementation, keccak256(abi.encode(allVaults.length)));
         OptionVault(vaultAddr).initialize(
             address(this),
             depositToken,
@@ -106,7 +106,8 @@ contract OptionVaultFactory is Ownable, EIP712 {
 
         // recover signer using EIP712
         (bytes32 digest, address signer) = computeWriteOptionHashAndRecover(
-            vault,
+            v.strike(),
+            v.expiry(),
             premiumPerUnit,
             minDeposit,
             maxDeposit,
@@ -177,36 +178,30 @@ contract OptionVaultFactory is Ownable, EIP712 {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Compute EIP712 hash for WriteOption message
-    /// @param vault The vault address
+    /// @param strike The strike price
+    /// @param expiry The expiry timestamp
     /// @param premiumPerUnit Premium per unit
     /// @param minDeposit Minimum deposit amount
     /// @param maxDeposit Maximum deposit amount
     /// @param validUntil Timestamp until which the signature is valid
     /// @return The EIP712 digest
     function computeWriteOptionHash(
-        address vault,
+        uint256 strike,
+        uint256 expiry,
         uint256 premiumPerUnit,
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 validUntil
     ) public view returns (bytes32) {
-        OptionVault v = OptionVault(vault);
         bytes32 structHash = keccak256(
-            abi.encode(
-                WRITE_OPTION_TYPEHASH,
-                v.strike(),
-                v.expiry(),
-                premiumPerUnit,
-                minDeposit,
-                maxDeposit,
-                validUntil
-            )
+            abi.encode(WRITE_OPTION_TYPEHASH, strike, expiry, premiumPerUnit, minDeposit, maxDeposit, validUntil)
         );
         return _hashTypedDataV4(structHash);
     }
 
     /// @notice Compute EIP712 hash and recover signer from signature
-    /// @param vault The vault address
+    /// @param strike The strike price
+    /// @param expiry The expiry timestamp
     /// @param premiumPerUnit Premium per unit
     /// @param minDeposit Minimum deposit amount
     /// @param maxDeposit Maximum deposit amount
@@ -215,14 +210,15 @@ contract OptionVaultFactory is Ownable, EIP712 {
     /// @return digest The EIP712 digest
     /// @return signer The recovered signer address
     function computeWriteOptionHashAndRecover(
-        address vault,
+        uint256 strike,
+        uint256 expiry,
         uint256 premiumPerUnit,
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 validUntil,
         bytes calldata signature
     ) public view returns (bytes32 digest, address signer) {
-        digest = computeWriteOptionHash(vault, premiumPerUnit, minDeposit, maxDeposit, validUntil);
+        digest = computeWriteOptionHash(strike, expiry, premiumPerUnit, minDeposit, maxDeposit, validUntil);
         signer = digest.recover(signature);
     }
 
