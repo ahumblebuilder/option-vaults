@@ -624,6 +624,8 @@ describe('OptionVault System', function () {
           user1.address,
           await vault1.getAddress(),
           amount,
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -684,6 +686,8 @@ describe('OptionVault System', function () {
           user1.address,
           await vault1.getAddress(),
           amount,
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -745,6 +749,8 @@ describe('OptionVault System', function () {
           user1.address,
           await vault1.getAddress(),
           amount,
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -766,21 +772,217 @@ describe('OptionVault System', function () {
       const validUntil = await getFutureTimestampHours(1);
 
       // Preview the transaction - call from user1's context
+      const [status, totalPremium] = await optionVaultFactory.connect(user1).previewWriteOption(
+        user1.address,
+        randomAddress,
+        amount,
+        ethers.parseUnits('4200', 6), // Dummy strike
+        await getFutureTimestamp(14), // Dummy expiry
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1,
+        '0x'
+      );
+
+      expect(status).to.equal(1); // PreviewStatus.UNKNOWN_VAULT
+      expect(totalPremium).to.equal(0);
+    });
+
+    it('Should reject signature with incorrect strike/expiry values', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      // Create signature with WRONG strike and expiry values
+      const wrongValue = {
+        strike: ethers.parseUnits('5000', 6), // Wrong strike (should be 4200)
+        expiry: await getFutureTimestamp(30), // Wrong expiry (should be vault1's expiry)
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const wrongSignature = await signer.signTypedData(domain, types, wrongValue);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Preview the transaction - should fail due to signature mismatch
       const [status, totalPremium] = await optionVaultFactory
         .connect(user1)
         .previewWriteOption(
           user1.address,
-          randomAddress,
+          await vault1.getAddress(),
           amount,
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
           validUntil,
           1,
-          '0x'
+          wrongSignature
         );
 
-      expect(status).to.equal(1); // PreviewStatus.UNKNOWN_VAULT
+      // The signature with wrong strike/expiry values will either:
+      // 1. Fail to recover any signer (BAD_SIGNATURE)
+      // 2. Recover a different signer who doesn't have enough balance (INSUFFICIENT_SIGNER_BALANCE)
+      // Both are valid rejections of the incorrect signature
+      expect([5, 10]).to.include(Number(status)); // BAD_SIGNATURE or INSUFFICIENT_SIGNER_BALANCE
+      expect(totalPremium).to.equal(ethers.parseUnits('300', 6)); // 150 * 2 = 300 USDC
+    });
+
+    it('Should reject preview with wrong strike parameter', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Preview with WRONG strike parameter (but correct signature)
+      const [status, totalPremium] = await optionVaultFactory.connect(user1).previewWriteOption(
+        user1.address,
+        await vault1.getAddress(),
+        amount,
+        ethers.parseUnits('5000', 6), // Wrong strike
+        await vault1.expiry(),
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1,
+        signature
+      );
+
+      expect(status).to.equal(12); // PreviewStatus.WRONG_STRIKE
+      expect(totalPremium).to.equal(0);
+    });
+
+    it('Should reject preview with wrong expiry parameter', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Preview with WRONG expiry parameter (but correct signature)
+      const [status, totalPremium] = await optionVaultFactory.connect(user1).previewWriteOption(
+        user1.address,
+        await vault1.getAddress(),
+        amount,
+        await vault1.strike(),
+        await getFutureTimestamp(30), // Wrong expiry
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1,
+        signature
+      );
+
+      expect(status).to.equal(13); // PreviewStatus.WRONG_EXPIRY
       expect(totalPremium).to.equal(0);
     });
   });
@@ -860,6 +1062,8 @@ describe('OptionVault System', function () {
       const tx = await optionVaultFactory.connect(user1).writeOption(
         await vault1.getAddress(),
         amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -954,6 +1158,8 @@ describe('OptionVault System', function () {
         optionVaultFactory.connect(user1).writeOption(
           await vault1.getAddress(),
           amount,
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -1011,6 +1217,8 @@ describe('OptionVault System', function () {
         optionVaultFactory.connect(user1).writeOption(
           await vault1.getAddress(),
           amount,
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -1068,6 +1276,8 @@ describe('OptionVault System', function () {
       await optionVaultFactory.connect(user1).writeOption(
         await vault1.getAddress(),
         amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -1112,6 +1322,196 @@ describe('OptionVault System', function () {
       await expect(
         optionVaultFactory.connect(owner).exercise(await vault1.getAddress(), exerciseAmount)
       ).to.be.revertedWithCustomError(optionVaultFactory, 'Expired');
+    });
+
+    it('Should reject writeOption with incorrect strike/expiry in signature', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      // Create signature with WRONG strike and expiry values
+      const wrongValue = {
+        strike: ethers.parseUnits('5000', 6), // Wrong strike (should be 4200)
+        expiry: await getFutureTimestamp(30), // Wrong expiry (should be vault1's expiry)
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const wrongSignature = await signer.signTypedData(domain, types, wrongValue);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Should revert due to signature mismatch (either BadSignature or InsufficientSignerBalance)
+      try {
+        await optionVaultFactory
+          .connect(user1)
+          .writeOption(
+            await vault1.getAddress(),
+            amount,
+            await vault1.strike(),
+            await vault1.expiry(),
+            premiumPerUnit,
+            minDeposit,
+            maxDeposit,
+            validUntil,
+            1,
+            wrongSignature
+          );
+        expect.fail('Expected transaction to revert');
+      } catch (error) {
+        // Should revert with either BadSignature or InsufficientSignerBalance
+        expect(error.message).to.match(/BadSignature|InsufficientSignerBalance/);
+      }
+    });
+
+    it('Should reject writeOption with wrong strike parameter', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Should revert with WrongStrike due to wrong strike parameter
+      await expect(
+        optionVaultFactory.connect(user1).writeOption(
+          await vault1.getAddress(),
+          amount,
+          ethers.parseUnits('5000', 6), // Wrong strike
+          await vault1.expiry(),
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          signature
+        )
+      ).to.be.revertedWithCustomError(optionVaultFactory, 'WrongStrike');
+    });
+
+    it('Should reject writeOption with wrong expiry parameter', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestampHours(1);
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Should revert with WrongExpiry due to wrong expiry parameter
+      await expect(
+        optionVaultFactory.connect(user1).writeOption(
+          await vault1.getAddress(),
+          amount,
+          await vault1.strike(),
+          await getFutureTimestamp(30), // Wrong expiry
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          signature
+        )
+      ).to.be.revertedWithCustomError(optionVaultFactory, 'WrongExpiry');
     });
   });
 
@@ -1167,6 +1567,8 @@ describe('OptionVault System', function () {
       const tx1 = await optionVaultFactory.connect(user1).writeOption(
         await vault1.getAddress(),
         amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -1185,6 +1587,8 @@ describe('OptionVault System', function () {
         optionVaultFactory.connect(user2).writeOption(
           await vault1.getAddress(),
           amount,
+          await vault1.strike(),
+          await vault1.expiry(),
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -1247,6 +1651,8 @@ describe('OptionVault System', function () {
       await optionVaultFactory.connect(user1).writeOption(
         await vault1.getAddress(),
         amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -1337,6 +1743,8 @@ describe('OptionVault System', function () {
       await optionVaultFactory.connect(user1).writeOption(
         await vault1.getAddress(),
         amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -1514,6 +1922,8 @@ describe('OptionVault System', function () {
       await optionVaultFactory.connect(user1).writeOption(
         await vault1.getAddress(),
         user1Amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -1537,6 +1947,8 @@ describe('OptionVault System', function () {
       await optionVaultFactory.connect(user2).writeOption(
         await vault1.getAddress(),
         user2Amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -1627,6 +2039,8 @@ describe('OptionVault System', function () {
       await optionVaultFactory.connect(user1).writeOption(
         await vault1.getAddress(),
         user1Amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,
@@ -1650,6 +2064,8 @@ describe('OptionVault System', function () {
       await optionVaultFactory.connect(user2).writeOption(
         await vault1.getAddress(),
         user2Amount,
+        await vault1.strike(),
+        await vault1.expiry(),
         premiumPerUnit,
         minDeposit,
         maxDeposit,

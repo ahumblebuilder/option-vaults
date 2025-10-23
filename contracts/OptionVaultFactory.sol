@@ -34,6 +34,8 @@ contract OptionVaultFactory is Ownable, EIP712 {
     error InsufficientUserAllowance();
     error InsufficientSignerBalance();
     error InsufficientSignerAllowance();
+    error WrongStrike();
+    error WrongExpiry();
 
     enum PreviewStatus {
         SUCCESS,
@@ -47,7 +49,9 @@ contract OptionVaultFactory is Ownable, EIP712 {
         INSUFFICIENT_USER_BALANCE,
         INSUFFICIENT_USER_ALLOWANCE,
         INSUFFICIENT_SIGNER_BALANCE,
-        INSUFFICIENT_SIGNER_ALLOWANCE
+        INSUFFICIENT_SIGNER_ALLOWANCE,
+        WRONG_STRIKE,
+        WRONG_EXPIRY
     }
 
     // EIP712 type hash for WriteOption message
@@ -112,9 +116,22 @@ contract OptionVaultFactory is Ownable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                                 USER ACTIONS
     //////////////////////////////////////////////////////////////*/
+    /// @notice Write an option by providing a signature from a signer
+    /// @param vault The vault address
+    /// @param amount The amount to write
+    /// @param strike The strike price (must match vault's strike)
+    /// @param expiry The expiry timestamp (must match vault's expiry)
+    /// @param premiumPerUnit Premium per unit
+    /// @param minDeposit Minimum deposit amount
+    /// @param maxDeposit Maximum deposit amount
+    /// @param validUntil Timestamp until which the signature is valid
+    /// @param quoteId Unique identifier for the quote
+    /// @param signature The signature to verify
     function writeOption(
         address vault,
         uint256 amount,
+        uint256 strike,
+        uint256 expiry,
         uint256 premiumPerUnit,
         uint256 minDeposit,
         uint256 maxDeposit,
@@ -127,6 +144,8 @@ contract OptionVaultFactory is Ownable, EIP712 {
             msg.sender,
             vault,
             amount,
+            strike,
+            expiry,
             premiumPerUnit,
             minDeposit,
             maxDeposit,
@@ -147,14 +166,16 @@ contract OptionVaultFactory is Ownable, EIP712 {
         if (status == PreviewStatus.INSUFFICIENT_USER_ALLOWANCE) revert InsufficientUserAllowance();
         if (status == PreviewStatus.INSUFFICIENT_SIGNER_BALANCE) revert InsufficientSignerBalance();
         if (status == PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE) revert InsufficientSignerAllowance();
+        if (status == PreviewStatus.WRONG_STRIKE) revert WrongStrike();
+        if (status == PreviewStatus.WRONG_EXPIRY) revert WrongExpiry();
         if (status != PreviewStatus.SUCCESS) revert BadSignature(); // Fallback
 
         OptionVault v = OptionVault(vault);
 
         // Mark as used (preview already verified these are safe)
         (bytes32 digest, address signer) = computeWriteOptionHashAndRecover(
-            v.strike(),
-            v.expiry(),
+            strike,
+            expiry,
             premiumPerUnit,
             minDeposit,
             maxDeposit,
@@ -191,6 +212,8 @@ contract OptionVaultFactory is Ownable, EIP712 {
     /// @param user The user who would be writing the option (msg.sender in actual writeOption)
     /// @param vault The vault address
     /// @param amount The amount to write
+    /// @param strike The strike price (must match vault's strike)
+    /// @param expiry The expiry timestamp (must match vault's expiry)
     /// @param premiumPerUnit Premium per unit
     /// @param minDeposit Minimum deposit amount
     /// @param maxDeposit Maximum deposit amount
@@ -203,6 +226,8 @@ contract OptionVaultFactory is Ownable, EIP712 {
         address user,
         address vault,
         uint256 amount,
+        uint256 strike,
+        uint256 expiry,
         uint256 premiumPerUnit,
         uint256 minDeposit,
         uint256 maxDeposit,
@@ -216,6 +241,16 @@ contract OptionVaultFactory is Ownable, EIP712 {
         }
 
         OptionVault v = OptionVault(vault);
+
+        // Check if strike mismatch
+        if (strike != v.strike()) {
+            return (PreviewStatus.WRONG_STRIKE, 0);
+        }
+
+        // Check if strike mismatch
+        if (expiry != v.expiry()) {
+            return (PreviewStatus.WRONG_EXPIRY, 0);
+        }
 
         // Check if signature is expired
         if (block.timestamp > validUntil) {
@@ -255,6 +290,11 @@ contract OptionVaultFactory is Ownable, EIP712 {
         if (signer == address(0)) {
             return (PreviewStatus.BAD_SIGNATURE, totalPremium);
         }
+
+        // Note: The signature validation already ensures that the signature was created
+        // with the vault's strike and expiry values since we pass v.strike() and v.expiry()
+        // to computeWriteOptionHashAndRecover. If the signature was created with different
+        // values, the signature recovery would fail or return a different signer.
 
         // Check if signature has already been used
         if (_isUsed[digest]) {
