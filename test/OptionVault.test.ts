@@ -147,7 +147,8 @@ describe('OptionVault System', function () {
         premiumPerUnit,
         minDeposit,
         maxDeposit,
-        validUntil
+        validUntil,
+        1 // quoteId
       );
 
       // Compute hash locally using ethers
@@ -166,6 +167,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -176,6 +178,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const localHash = ethers.TypedDataEncoder.hash(domain, types, value);
@@ -205,6 +208,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -215,6 +219,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
@@ -228,6 +233,7 @@ describe('OptionVault System', function () {
           minDeposit,
           maxDeposit,
           validUntil,
+          1, // quoteId
           signature
         );
 
@@ -252,7 +258,8 @@ describe('OptionVault System', function () {
         premiumPerUnit,
         minDeposit,
         maxDeposit,
-        validUntil
+        validUntil,
+        2 // quoteId
       );
 
       // Local computation
@@ -271,6 +278,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -281,6 +289,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 2,
       };
 
       const localHash = ethers.TypedDataEncoder.hash(domain, types, value);
@@ -304,6 +313,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -314,6 +324,7 @@ describe('OptionVault System', function () {
         minDeposit: '1000000000000000000', // 1 WETH (18 decimals)
         maxDeposit: '10000000000000000000', // 10 WETH (18 decimals)
         validUntil: '1735689600', // 2025-01-01 00:00:00 UTC
+        quoteId: '1', // Quote ID
       };
 
       console.log('\n=== STATIC EIP712 TEST VALUES ===');
@@ -377,7 +388,8 @@ describe('OptionVault System', function () {
         staticValue.premiumPerUnit,
         staticValue.minDeposit,
         staticValue.maxDeposit,
-        staticValue.validUntil
+        staticValue.validUntil,
+        staticValue.quoteId
       );
 
       console.log('On-chain computed hash:', onchainHash);
@@ -391,6 +403,7 @@ describe('OptionVault System', function () {
         staticValue.minDeposit,
         staticValue.maxDeposit,
         staticValue.validUntil,
+        staticValue.quoteId,
         staticSignature
       );
 
@@ -424,6 +437,7 @@ describe('OptionVault System', function () {
         minDeposit: staticValue.minDeposit,
         maxDeposit: staticValue.maxDeposit,
         validUntil: staticValue.validUntil,
+        quoteId: staticValue.quoteId,
       };
 
       console.log('Vault domain:', vaultDomain);
@@ -444,7 +458,8 @@ describe('OptionVault System', function () {
         vaultValue.premiumPerUnit,
         vaultValue.minDeposit,
         vaultValue.maxDeposit,
-        vaultValue.validUntil
+        vaultValue.validUntil,
+        vaultValue.quoteId
       );
 
       console.log('Vault on-chain hash:', vaultOnchainHash);
@@ -458,6 +473,7 @@ describe('OptionVault System', function () {
         vaultValue.minDeposit,
         vaultValue.maxDeposit,
         vaultValue.validUntil,
+        vaultValue.quoteId,
         vaultSignature
       );
 
@@ -526,7 +542,8 @@ describe('OptionVault System', function () {
           ethers.parseUnits('100', 6),
           ethers.parseEther('1'),
           ethers.parseEther('10'),
-          Math.floor(Date.now() / 1000) + 3600
+          Math.floor(Date.now() / 1000) + 3600,
+          1 // quoteId
         );
         // If we get here, the test should fail
         expect.fail('Expected function to fail with invalid vault address');
@@ -543,7 +560,8 @@ describe('OptionVault System', function () {
         ethers.parseUnits('100', 6),
         ethers.parseEther('1'),
         ethers.parseEther('10'),
-        Math.floor(Date.now() / 1000) + 3600
+        Math.floor(Date.now() / 1000) + 3600,
+        1 // quoteId
       );
 
       expect(hash).to.not.equal(ethers.ZeroHash);
@@ -585,6 +603,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -595,6 +614,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
@@ -620,17 +640,16 @@ describe('OptionVault System', function () {
       // Signer needs to approve USDC for the factory (since signer pays premium)
       await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
 
-      const tx = await optionVaultFactory
-        .connect(user1)
-        .writeOption(
-          await vault1.getAddress(),
-          amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          validUntil,
-          signature
-        );
+      const tx = await optionVaultFactory.connect(user1).writeOption(
+        await vault1.getAddress(),
+        amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1, // quoteId
+        signature
+      );
 
       const receipt = await tx.wait();
 
@@ -715,17 +734,16 @@ describe('OptionVault System', function () {
 
       // Should revert with ECDSAInvalidSignature error due to malformed signature
       await expect(
-        optionVaultFactory
-          .connect(user1)
-          .writeOption(
-            await vault1.getAddress(),
-            amount,
-            premiumPerUnit,
-            minDeposit,
-            maxDeposit,
-            validUntil,
-            malformedSignature
-          )
+        optionVaultFactory.connect(user1).writeOption(
+          await vault1.getAddress(),
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1, // quoteId
+          malformedSignature
+        )
       ).to.be.revertedWithCustomError(optionVaultFactory, 'ECDSAInvalidSignature');
     });
 
@@ -753,6 +771,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -763,6 +782,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
@@ -771,17 +791,16 @@ describe('OptionVault System', function () {
 
       // Should revert with Expired error
       await expect(
-        optionVaultFactory
-          .connect(user1)
-          .writeOption(
-            await vault1.getAddress(),
-            amount,
-            premiumPerUnit,
-            minDeposit,
-            maxDeposit,
-            validUntil,
-            signature
-          )
+        optionVaultFactory.connect(user1).writeOption(
+          await vault1.getAddress(),
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1, // quoteId
+          signature
+        )
       ).to.be.revertedWithCustomError(optionVaultFactory, 'Expired');
     });
 
@@ -809,6 +828,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -819,6 +839,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
@@ -827,17 +848,16 @@ describe('OptionVault System', function () {
       await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
       await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
 
-      await optionVaultFactory
-        .connect(user1)
-        .writeOption(
-          await vault1.getAddress(),
-          amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          validUntil,
-          signature
-        );
+      await optionVaultFactory.connect(user1).writeOption(
+        await vault1.getAddress(),
+        amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1, // quoteId
+        signature
+      );
 
       console.log('\n=== EXERCISE AFTER EXPIRY TEST ===');
       console.log('Vault expiry:', new Date(Number(await vault1.expiry()) * 1000).toISOString());
@@ -906,6 +926,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -916,6 +937,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
@@ -925,17 +947,16 @@ describe('OptionVault System', function () {
       await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
       await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
 
-      const tx1 = await optionVaultFactory
-        .connect(user1)
-        .writeOption(
-          await vault1.getAddress(),
-          amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          validUntil,
-          signature
-        );
+      const tx1 = await optionVaultFactory.connect(user1).writeOption(
+        await vault1.getAddress(),
+        amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1, // quoteId
+        signature
+      );
 
       await tx1.wait();
 
@@ -944,17 +965,16 @@ describe('OptionVault System', function () {
       await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
 
       await expect(
-        optionVaultFactory
-          .connect(user2)
-          .writeOption(
-            await vault1.getAddress(),
-            amount,
-            premiumPerUnit,
-            minDeposit,
-            maxDeposit,
-            validUntil,
-            signature
-          )
+        optionVaultFactory.connect(user2).writeOption(
+          await vault1.getAddress(),
+          amount,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1, // quoteId (same as first call)
+          signature
+        )
       ).to.be.revertedWithCustomError(optionVaultFactory, 'AlreadyUsed');
     });
   });
@@ -987,6 +1007,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -997,6 +1018,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
@@ -1005,17 +1027,16 @@ describe('OptionVault System', function () {
       await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
       await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
 
-      await optionVaultFactory
-        .connect(user1)
-        .writeOption(
-          await vault1.getAddress(),
-          amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          validUntil,
-          signature
-        );
+      await optionVaultFactory.connect(user1).writeOption(
+        await vault1.getAddress(),
+        amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1, // quoteId
+        signature
+      );
 
       // Fast forward past expiry
       await hreEthers.provider.send('evm_increaseTime', [15 * 24 * 60 * 60]); // 15 days
@@ -1076,6 +1097,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -1086,6 +1108,7 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
@@ -1094,17 +1117,16 @@ describe('OptionVault System', function () {
       await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
       await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
 
-      await optionVaultFactory
-        .connect(user1)
-        .writeOption(
-          await vault1.getAddress(),
-          amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          validUntil,
-          signature
-        );
+      await optionVaultFactory.connect(user1).writeOption(
+        await vault1.getAddress(),
+        amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1, // quoteId
+        signature
+      );
 
       // Owner exercises the option
       const exerciseAmount = ethers.parseEther('1.5'); // Exercise 1.5 WETH worth
@@ -1246,6 +1268,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -1256,51 +1279,55 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
 
-      // User1 writes option
+      // Calculate premiums for both users
       const user1Premium = (premiumPerUnit * user1Amount) / ethers.parseEther('1');
-      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), user1Amount);
-      await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), user1Premium);
+      const user2Premium = (premiumPerUnit * user2Amount) / ethers.parseEther('1');
+      const totalPremium = user1Premium + user2Premium;
 
-      await optionVaultFactory
-        .connect(user1)
-        .writeOption(
-          await vault1.getAddress(),
-          user1Amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          validUntil,
-          signature
-        );
+      // Approve total premium upfront
+      await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), totalPremium);
+
+      // User1 writes option
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), user1Amount);
+
+      await optionVaultFactory.connect(user1).writeOption(
+        await vault1.getAddress(),
+        user1Amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1, // quoteId
+        signature
+      );
 
       // User2 writes option with a new signature (to avoid AlreadyUsed error)
-      const user2Premium = (premiumPerUnit * user2Amount) / ethers.parseEther('1');
       await weth.connect(user2).approve(await optionVaultFactory.getAddress(), user2Amount);
-      await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), user2Premium);
 
-      // Create a new signature for user2 with slightly different validUntil
+      // Create a new signature for user2 with slightly different validUntil and quoteId
       const user2ValidUntil = await getFutureTimestampHours(3); // 3 hours instead of 2
       const user2Value = {
         ...value,
         validUntil: user2ValidUntil,
+        quoteId: 2, // Different quoteId to avoid QuoteIdAlreadyUsed
       };
       const user2Signature = await signer.signTypedData(domain, types, user2Value);
 
-      await optionVaultFactory
-        .connect(user2)
-        .writeOption(
-          await vault1.getAddress(),
-          user2Amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          user2ValidUntil,
-          user2Signature
-        );
+      await optionVaultFactory.connect(user2).writeOption(
+        await vault1.getAddress(),
+        user2Amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        user2ValidUntil,
+        2, // quoteId
+        user2Signature
+      );
 
       // Fast forward past expiry
       await hreEthers.provider.send('evm_increaseTime', [15 * 24 * 60 * 60]);
@@ -1354,6 +1381,7 @@ describe('OptionVault System', function () {
           { name: 'minDeposit', type: 'uint256' },
           { name: 'maxDeposit', type: 'uint256' },
           { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
         ],
       };
 
@@ -1364,51 +1392,55 @@ describe('OptionVault System', function () {
         minDeposit: minDeposit,
         maxDeposit: maxDeposit,
         validUntil: validUntil,
+        quoteId: 1,
       };
 
       const signature = await signer.signTypedData(domain, types, value);
 
-      // User1 writes option
+      // Calculate premiums for both users
       const user1Premium = (premiumPerUnit * user1Amount) / ethers.parseEther('1');
-      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), user1Amount);
-      await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), user1Premium);
+      const user2Premium = (premiumPerUnit * user2Amount) / ethers.parseEther('1');
+      const totalPremium = user1Premium + user2Premium;
 
-      await optionVaultFactory
-        .connect(user1)
-        .writeOption(
-          await vault1.getAddress(),
-          user1Amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          validUntil,
-          signature
-        );
+      // Approve total premium upfront
+      await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), totalPremium);
+
+      // User1 writes option
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), user1Amount);
+
+      await optionVaultFactory.connect(user1).writeOption(
+        await vault1.getAddress(),
+        user1Amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        validUntil,
+        1, // quoteId
+        signature
+      );
 
       // User2 writes option with a new signature (to avoid AlreadyUsed error)
-      const user2Premium = (premiumPerUnit * user2Amount) / ethers.parseEther('1');
       await weth.connect(user2).approve(await optionVaultFactory.getAddress(), user2Amount);
-      await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), user2Premium);
 
-      // Create a new signature for user2 with slightly different validUntil
+      // Create a new signature for user2 with slightly different validUntil and quoteId
       const user2ValidUntil = await getFutureTimestampHours(3); // 3 hours instead of 2
       const user2Value = {
         ...value,
         validUntil: user2ValidUntil,
+        quoteId: 2, // Different quoteId to avoid QuoteIdAlreadyUsed
       };
       const user2Signature = await signer.signTypedData(domain, types, user2Value);
 
-      await optionVaultFactory
-        .connect(user2)
-        .writeOption(
-          await vault1.getAddress(),
-          user2Amount,
-          premiumPerUnit,
-          minDeposit,
-          maxDeposit,
-          user2ValidUntil,
-          user2Signature
-        );
+      await optionVaultFactory.connect(user2).writeOption(
+        await vault1.getAddress(),
+        user2Amount,
+        premiumPerUnit,
+        minDeposit,
+        maxDeposit,
+        user2ValidUntil,
+        2, // quoteId
+        user2Signature
+      );
 
       // Owner exercises 50% of the total
       const exerciseAmount = totalAmount / 2n; // Exercise 1 WETH

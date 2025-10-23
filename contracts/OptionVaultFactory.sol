@@ -19,6 +19,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
 
     mapping(address => bool) internal _knownVaults;
     mapping(bytes32 => bool) internal _isUsed;
+    mapping(address => mapping(address => mapping(uint256 => bool))) internal _usedQuoteIds;
 
     error AlreadyUsed();
     error UnknownVault();
@@ -26,11 +27,12 @@ contract OptionVaultFactory is Ownable, EIP712 {
     error NotVaultOwner();
     error NoBalance();
     error Expired();
+    error QuoteIdAlreadyUsed();
 
     // EIP712 type hash for WriteOption message
     bytes32 private constant WRITE_OPTION_TYPEHASH =
         keccak256(
-            "WriteOption(uint256 strike,uint256 expiry,uint256 premiumPerUnit,uint256 minDeposit,uint256 maxDeposit,uint256 validUntil)"
+            "WriteOption(uint256 strike,uint256 expiry,uint256 premiumPerUnit,uint256 minDeposit,uint256 maxDeposit,uint256 validUntil,uint256 quoteId)"
         );
 
     event VaultCreated(
@@ -97,6 +99,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 validUntil,
+        uint256 quoteId,
         bytes calldata signature
     ) external {
         if (!_knownVaults[vault]) revert UnknownVault();
@@ -112,12 +115,15 @@ contract OptionVaultFactory is Ownable, EIP712 {
             minDeposit,
             maxDeposit,
             validUntil,
+            quoteId,
             signature
         );
         if (_isUsed[digest]) revert AlreadyUsed();
         if (signer == address(0)) revert BadSignature();
+        if (_usedQuoteIds[vault][signer][quoteId]) revert QuoteIdAlreadyUsed();
 
         _isUsed[digest] = true;
+        _usedQuoteIds[vault][signer][quoteId] = true;
 
         // send premium from signer to user
         uint256 premium = (premiumPerUnit * amount) / (10 ** ERC20(address(v.depositToken())).decimals());
@@ -184,6 +190,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
     /// @param minDeposit Minimum deposit amount
     /// @param maxDeposit Maximum deposit amount
     /// @param validUntil Timestamp until which the signature is valid
+    /// @param quoteId Unique identifier for the quote
     /// @return The EIP712 digest
     function computeWriteOptionHash(
         uint256 strike,
@@ -191,10 +198,20 @@ contract OptionVaultFactory is Ownable, EIP712 {
         uint256 premiumPerUnit,
         uint256 minDeposit,
         uint256 maxDeposit,
-        uint256 validUntil
+        uint256 validUntil,
+        uint256 quoteId
     ) public view returns (bytes32) {
         bytes32 structHash = keccak256(
-            abi.encode(WRITE_OPTION_TYPEHASH, strike, expiry, premiumPerUnit, minDeposit, maxDeposit, validUntil)
+            abi.encode(
+                WRITE_OPTION_TYPEHASH,
+                strike,
+                expiry,
+                premiumPerUnit,
+                minDeposit,
+                maxDeposit,
+                validUntil,
+                quoteId
+            )
         );
         return _hashTypedDataV4(structHash);
     }
@@ -206,6 +223,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
     /// @param minDeposit Minimum deposit amount
     /// @param maxDeposit Maximum deposit amount
     /// @param validUntil Timestamp until which the signature is valid
+    /// @param quoteId Unique identifier for the quote
     /// @param signature The signature to verify
     /// @return digest The EIP712 digest
     /// @return signer The recovered signer address
@@ -216,10 +234,20 @@ contract OptionVaultFactory is Ownable, EIP712 {
         uint256 minDeposit,
         uint256 maxDeposit,
         uint256 validUntil,
+        uint256 quoteId,
         bytes calldata signature
     ) public view returns (bytes32 digest, address signer) {
-        digest = computeWriteOptionHash(strike, expiry, premiumPerUnit, minDeposit, maxDeposit, validUntil);
+        digest = computeWriteOptionHash(strike, expiry, premiumPerUnit, minDeposit, maxDeposit, validUntil, quoteId);
         signer = digest.recover(signature);
+    }
+
+    /// @notice Check if a quoteId has been used for a specific vault and signer
+    /// @param vault The vault address
+    /// @param signer The signer address
+    /// @param quoteId The quote identifier
+    /// @return True if the quoteId has been used
+    function isQuoteIdUsed(address vault, address signer, uint256 quoteId) external view returns (bool) {
+        return _usedQuoteIds[vault][signer][quoteId];
     }
 
     /*//////////////////////////////////////////////////////////////
