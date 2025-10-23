@@ -21,13 +21,13 @@ contract OptionVaultFactory is Ownable, EIP712 {
     mapping(bytes32 => bool) internal _isUsed;
     mapping(address => mapping(address => mapping(uint256 => bool))) internal _usedQuoteIds;
 
-    error AlreadyUsed();
+    error AlreadyFilled();
     error UnknownVault();
     error BadSignature();
     error NotVaultOwner();
     error NoBalance();
     error Expired();
-    error QuoteIdAlreadyUsed();
+    error QuoteIdAlreadyFilled();
 
     // EIP712 type hash for WriteOption message
     bytes32 private constant WRITE_OPTION_TYPEHASH =
@@ -118,9 +118,9 @@ contract OptionVaultFactory is Ownable, EIP712 {
             quoteId,
             signature
         );
-        if (_isUsed[digest]) revert AlreadyUsed();
+        if (_isUsed[digest]) revert AlreadyFilled();
         if (signer == address(0)) revert BadSignature();
-        if (_usedQuoteIds[vault][signer][quoteId]) revert QuoteIdAlreadyUsed();
+        if (_usedQuoteIds[vault][signer][quoteId]) revert QuoteIdAlreadyFilled();
 
         _isUsed[digest] = true;
         _usedQuoteIds[vault][signer][quoteId] = true;

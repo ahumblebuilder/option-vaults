@@ -903,7 +903,7 @@ describe('OptionVault System', function () {
       await setupTestEnvironment();
     });
 
-    it('Should prevent replay attacks with AlreadyUsed error', async function () {
+    it('Should prevent replay attacks with AlreadyFilled error', async function () {
       const premiumPerUnit = ethers.parseUnits('150', 6);
       const minDeposit = ethers.parseEther('1');
       const maxDeposit = ethers.parseEther('10');
@@ -960,7 +960,7 @@ describe('OptionVault System', function () {
 
       await tx1.wait();
 
-      // Second use with same signature - should fail with AlreadyUsed
+      // Second use with same signature - should fail with AlreadyFilled
       await weth.connect(user2).approve(await optionVaultFactory.getAddress(), amount);
       await usdc.connect(signer).approve(await optionVaultFactory.getAddress(), expectedPremium);
 
@@ -975,7 +975,7 @@ describe('OptionVault System', function () {
           1, // quoteId (same as first call)
           signature
         )
-      ).to.be.revertedWithCustomError(optionVaultFactory, 'AlreadyUsed');
+      ).to.be.revertedWithCustomError(optionVaultFactory, 'AlreadyFilled');
     });
   });
 
@@ -1306,7 +1306,7 @@ describe('OptionVault System', function () {
         signature
       );
 
-      // User2 writes option with a new signature (to avoid AlreadyUsed error)
+      // User2 writes option with a new signature (to avoid AlreadyFilled error)
       await weth.connect(user2).approve(await optionVaultFactory.getAddress(), user2Amount);
 
       // Create a new signature for user2 with slightly different validUntil and quoteId
@@ -1314,7 +1314,7 @@ describe('OptionVault System', function () {
       const user2Value = {
         ...value,
         validUntil: user2ValidUntil,
-        quoteId: 2, // Different quoteId to avoid QuoteIdAlreadyUsed
+        quoteId: 2, // Different quoteId to avoid QuoteIdAlreadyFilled
       };
       const user2Signature = await signer.signTypedData(domain, types, user2Value);
 
@@ -1419,7 +1419,7 @@ describe('OptionVault System', function () {
         signature
       );
 
-      // User2 writes option with a new signature (to avoid AlreadyUsed error)
+      // User2 writes option with a new signature (to avoid AlreadyFilled error)
       await weth.connect(user2).approve(await optionVaultFactory.getAddress(), user2Amount);
 
       // Create a new signature for user2 with slightly different validUntil and quoteId
@@ -1427,7 +1427,7 @@ describe('OptionVault System', function () {
       const user2Value = {
         ...value,
         validUntil: user2ValidUntil,
-        quoteId: 2, // Different quoteId to avoid QuoteIdAlreadyUsed
+        quoteId: 2, // Different quoteId to avoid QuoteIdAlreadyFilled
       };
       const user2Signature = await signer.signTypedData(domain, types, user2Value);
 
