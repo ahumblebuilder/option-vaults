@@ -11,11 +11,13 @@ This directory contains Python implementations for testing EIP712 signatures use
 ## Setup
 
 1. Install Python dependencies:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 2. Run the signature test:
+
 ```bash
 python eip712_signature_test.py
 ```
@@ -32,6 +34,7 @@ This Python implementation serves as a cross-verification tool to ensure that EI
 ## Expected Output
 
 The script should output:
+
 - Domain, types, and values used for EIP712 signing
 - Computed message hash
 - Generated signature

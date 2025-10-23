@@ -22,9 +22,11 @@
     "@openzeppelin/contracts": "^5.4.0"
   },
   "scripts": {
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "prettier --write . && npm run format:py",
+    "format:check": "prettier --check . && npm run format:check:py",
     "format:sol": "prettier --write \"contracts/**/*.sol\"",
-    "format:ts": "prettier --write \"test/**/*.ts\" \"scripts/**/*.ts\" \"hardhat.config.ts\""
+    "format:ts": "prettier --write \"test/**/*.ts\" \"scripts/**/*.ts\" \"hardhat.config.ts\"",
+    "format:py": "cd py && python -m black .",
+    "format:check:py": "cd py && python -m black --check ."
   }
 }
