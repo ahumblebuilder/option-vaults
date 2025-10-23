@@ -4,8 +4,9 @@ pragma solidity 0.8.28;
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./utils/ERC20Initializable.sol";
+import "./interfaces/IOptionVault.sol";
 
-contract OptionVault is ERC20Initializable {
+contract OptionVault is IOptionVault, ERC20Initializable {
     using SafeERC20 for IERC20;
 
     IERC20 public depositToken;

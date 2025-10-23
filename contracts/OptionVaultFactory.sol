@@ -8,8 +8,9 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./OptionVault.sol";
+import "./interfaces/IOptionVaultFactory.sol";
 
-contract OptionVaultFactory is Ownable, EIP712 {
+contract OptionVaultFactory is IOptionVaultFactory, Ownable, EIP712 {
     using Clones for address;
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
@@ -36,47 +37,14 @@ contract OptionVaultFactory is Ownable, EIP712 {
     error InsufficientSignerAllowance();
     error WrongStrike();
     error WrongExpiry();
-
-    enum PreviewStatus {
-        SUCCESS,
-        UNKNOWN_VAULT,
-        EXPIRED_SIGNATURE,
-        ALREADY_FILLED,
-        QUOTE_ID_ALREADY_FILLED,
-        BAD_SIGNATURE,
-        BELOW_MIN_DEPOSIT,
-        ABOVE_MAX_DEPOSIT,
-        INSUFFICIENT_USER_BALANCE,
-        INSUFFICIENT_USER_ALLOWANCE,
-        INSUFFICIENT_SIGNER_BALANCE,
-        INSUFFICIENT_SIGNER_ALLOWANCE,
-        WRONG_STRIKE,
-        WRONG_EXPIRY
-    }
+    error BadValidUntil();
+    error VaultExpired();
 
     // EIP712 type hash for WriteOption message
     bytes32 private constant WRITE_OPTION_TYPEHASH =
         keccak256(
             "WriteOption(uint256 strike,uint256 expiry,uint256 premiumPerUnit,uint256 minDeposit,uint256 maxDeposit,uint256 validUntil,uint256 quoteId)"
         );
-
-    event VaultCreated(
-        address indexed vault,
-        address depositToken,
-        address conversionToken,
-        address premiumToken,
-        uint256 strike,
-        uint256 expiry
-    );
-    event OptionWritten(
-        address indexed vault,
-        address indexed writer,
-        address indexed signer,
-        uint256 amount,
-        uint256 premium
-    );
-    event Exercised(address indexed vault, uint256 exerciseAmount, uint256 cost);
-    event Redeemed(address indexed vault, address indexed user, uint256 burned);
 
     constructor(address _implementation) Ownable(msg.sender) EIP712("OptionVault", "1") {
         implementation = _implementation;
@@ -157,17 +125,19 @@ contract OptionVaultFactory is Ownable, EIP712 {
         // Revert with appropriate error based on preview status
         if (status == PreviewStatus.UNKNOWN_VAULT) revert UnknownVault();
         if (status == PreviewStatus.EXPIRED_SIGNATURE) revert Expired();
+        if (status == PreviewStatus.BAD_VALID_UNTIL) revert BadValidUntil();
+        if (status == PreviewStatus.VAULT_EXPIRED) revert VaultExpired();
         if (status == PreviewStatus.ALREADY_FILLED) revert AlreadyFilled();
         if (status == PreviewStatus.QUOTE_ID_ALREADY_FILLED) revert QuoteIdAlreadyFilled();
-        if (status == PreviewStatus.BAD_SIGNATURE) revert BadSignature();
         if (status == PreviewStatus.ABOVE_MAX_DEPOSIT) revert AboveMaxDeposit();
         if (status == PreviewStatus.BELOW_MIN_DEPOSIT) revert BelowMinDeposit();
         if (status == PreviewStatus.INSUFFICIENT_USER_BALANCE) revert InsufficenUserBalance();
         if (status == PreviewStatus.INSUFFICIENT_USER_ALLOWANCE) revert InsufficientUserAllowance();
-        if (status == PreviewStatus.INSUFFICIENT_SIGNER_BALANCE) revert InsufficientSignerBalance();
-        if (status == PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE) revert InsufficientSignerAllowance();
         if (status == PreviewStatus.WRONG_STRIKE) revert WrongStrike();
         if (status == PreviewStatus.WRONG_EXPIRY) revert WrongExpiry();
+        if (status == PreviewStatus.BAD_SIGNATURE) revert BadSignature();
+        if (status == PreviewStatus.INSUFFICIENT_SIGNER_BALANCE) revert InsufficientSignerBalance();
+        if (status == PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE) revert InsufficientSignerAllowance();
         if (status != PreviewStatus.SUCCESS) revert BadSignature(); // Fallback
 
         OptionVault v = OptionVault(vault);
@@ -255,6 +225,16 @@ contract OptionVaultFactory is Ownable, EIP712 {
         // Check if signature is expired
         if (block.timestamp > validUntil) {
             return (PreviewStatus.EXPIRED_SIGNATURE, 0);
+        }
+
+        // Check if current block time is after vault expiry
+        if (block.timestamp > v.expiry()) {
+            return (PreviewStatus.VAULT_EXPIRED, 0);
+        }
+
+        // Check if validUntil is after vault expiry
+        if (validUntil > v.expiry()) {
+            return (PreviewStatus.BAD_VALID_UNTIL, 0);
         }
 
         // Check if amount is within bounds
@@ -348,6 +328,15 @@ contract OptionVaultFactory is Ownable, EIP712 {
         return _knownVaults[vault];
     }
 
+    /// @notice Check if a quoteId has been used for a specific vault and signer
+    /// @param vault The vault address
+    /// @param signer The signer address
+    /// @param quoteId The quote identifier
+    /// @return True if the quoteId has been used
+    function isQuoteIdUsed(address vault, address signer, uint256 quoteId) external view returns (bool) {
+        return _usedQuoteIds[vault][signer][quoteId];
+    }
+
     /*//////////////////////////////////////////////////////////////
                             EIP712 HELPERS
     //////////////////////////////////////////////////////////////*/
@@ -408,15 +397,6 @@ contract OptionVaultFactory is Ownable, EIP712 {
     ) public view returns (bytes32 digest, address signer) {
         digest = computeWriteOptionHash(strike, expiry, premiumPerUnit, minDeposit, maxDeposit, validUntil, quoteId);
         signer = digest.recover(signature);
-    }
-
-    /// @notice Check if a quoteId has been used for a specific vault and signer
-    /// @param vault The vault address
-    /// @param signer The signer address
-    /// @param quoteId The quote identifier
-    /// @return True if the quoteId has been used
-    function isQuoteIdUsed(address vault, address signer, uint256 quoteId) external view returns (bool) {
-        return _usedQuoteIds[vault][signer][quoteId];
     }
 
     /*//////////////////////////////////////////////////////////////

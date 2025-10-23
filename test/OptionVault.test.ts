@@ -696,7 +696,7 @@ describe('OptionVault System', function () {
           signature
         );
 
-      expect(status).to.equal(8); // PreviewStatus.INSUFFICIENT_USER_BALANCE
+      expect(status).to.equal(10); // PreviewStatus.INSUFFICIENT_USER_BALANCE
       expect(totalPremium).to.equal(ethers.parseUnits('750', 6)); // 150 * 5 = 750 USDC
     });
 
@@ -759,7 +759,7 @@ describe('OptionVault System', function () {
           signature
         );
 
-      expect(status).to.equal(11); // PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE
+      expect(status).to.equal(13); // PreviewStatus.INSUFFICIENT_SIGNER_ALLOWANCE
       expect(totalPremium).to.equal(ethers.parseUnits('300', 6)); // 150 * 2 = 300 USDC
     });
 
@@ -842,8 +842,8 @@ describe('OptionVault System', function () {
           user1.address,
           await vault1.getAddress(),
           amount,
-          await vault1.strike(),
-          await vault1.expiry(),
+          wrongValue.strike,
+          wrongValue.expiry,
           premiumPerUnit,
           minDeposit,
           maxDeposit,
@@ -852,12 +852,25 @@ describe('OptionVault System', function () {
           wrongSignature
         );
 
-      // The signature with wrong strike/expiry values will either:
-      // 1. Fail to recover any signer (BAD_SIGNATURE)
-      // 2. Recover a different signer who doesn't have enough balance (INSUFFICIENT_SIGNER_BALANCE)
-      // Both are valid rejections of the incorrect signature
-      expect([5, 10]).to.include(Number(status)); // BAD_SIGNATURE or INSUFFICIENT_SIGNER_BALANCE
-      expect(totalPremium).to.equal(ethers.parseUnits('300', 6)); // 150 * 2 = 300 USDC
+      expect([14]).to.include(Number(status)); // wrong strike
+
+      // Preview the transaction - should fail due to signature mismatch
+      const [status2] = await optionVaultFactory
+        .connect(user1)
+        .previewWriteOption(
+          user1.address,
+          await vault1.getAddress(),
+          amount,
+          await vault1.strike(),
+          wrongValue.expiry,
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          wrongSignature
+        );
+      expect([15]).to.include(Number(status2)); // wrong strike
     });
 
     it('Should reject preview with wrong strike parameter', async function () {
@@ -919,7 +932,7 @@ describe('OptionVault System', function () {
         signature
       );
 
-      expect(status).to.equal(12); // PreviewStatus.WRONG_STRIKE
+      expect(status).to.equal(14); // PreviewStatus.WRONG_STRIKE
       expect(totalPremium).to.equal(0);
     });
 
@@ -982,7 +995,148 @@ describe('OptionVault System', function () {
         signature
       );
 
-      expect(status).to.equal(13); // PreviewStatus.WRONG_EXPIRY
+      expect(status).to.equal(15); // PreviewStatus.WRONG_EXPIRY
+      expect(totalPremium).to.equal(0);
+    });
+
+    it('Should reject preview with validUntil after vault expiry', async function () {
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+      const validUntil = await getFutureTimestamp(20); // 20 days from now (after vault expiry)
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Preview with validUntil after vault expiry
+      const [status, totalPremium] = await optionVaultFactory
+        .connect(user1)
+        .previewWriteOption(
+          user1.address,
+          await vault1.getAddress(),
+          amount,
+          await vault1.strike(),
+          await vault1.expiry(),
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          signature
+        );
+
+      expect(status).to.equal(3); // PreviewStatus.BAD_VALID_UNTIL
+      expect(totalPremium).to.equal(0);
+    });
+
+    it('Should reject preview when current time is after vault expiry', async function () {
+      // Fast forward past vault expiry
+      const vaultExpiry = await vault1.expiry();
+      const currentTime = await getCurrentBlockTime();
+      const timeToAdvance = Number(vaultExpiry) - Number(currentTime) + 1; // 1 second past expiry
+      await hreEthers.provider.send('evm_increaseTime', [timeToAdvance]);
+      await hreEthers.provider.send('evm_mine');
+
+      const amount = ethers.parseEther('2');
+      const premiumPerUnit = ethers.parseUnits('150', 6);
+      const minDeposit = ethers.parseEther('1');
+      const maxDeposit = ethers.parseEther('10');
+
+      // Create signature after advancing time, with validUntil in the future but before vault expiry
+      const currentTimeAfterAdvance = await getCurrentBlockTime();
+      const vaultExpiryTime = Number(await vault1.expiry());
+      const validUntil = Number(currentTimeAfterAdvance) + 3600; // 1 hour from current time
+
+      const domain = {
+        name: 'OptionVault',
+        version: '1',
+        chainId: await hreEthers.provider.getNetwork().then(n => n.chainId),
+        verifyingContract: await optionVaultFactory.getAddress(),
+      };
+
+      const types = {
+        WriteOption: [
+          { name: 'strike', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'premiumPerUnit', type: 'uint256' },
+          { name: 'minDeposit', type: 'uint256' },
+          { name: 'maxDeposit', type: 'uint256' },
+          { name: 'validUntil', type: 'uint256' },
+          { name: 'quoteId', type: 'uint256' },
+        ],
+      };
+
+      const value = {
+        strike: await vault1.strike(),
+        expiry: await vault1.expiry(),
+        premiumPerUnit: premiumPerUnit,
+        minDeposit: minDeposit,
+        maxDeposit: maxDeposit,
+        validUntil: validUntil,
+        quoteId: 1,
+      };
+
+      const signature = await signer.signTypedData(domain, types, value);
+
+      // Approve tokens
+      await weth.connect(user1).approve(await optionVaultFactory.getAddress(), amount);
+      await usdc
+        .connect(signer)
+        .approve(await optionVaultFactory.getAddress(), ethers.parseUnits('300', 6));
+
+      // Preview when current time is after vault expiry
+      const [status, totalPremium] = await optionVaultFactory
+        .connect(user1)
+        .previewWriteOption(
+          user1.address,
+          await vault1.getAddress(),
+          amount,
+          await vault1.strike(),
+          await vault1.expiry(),
+          premiumPerUnit,
+          minDeposit,
+          maxDeposit,
+          validUntil,
+          1,
+          signature
+        );
+
+      expect(status).to.equal(4); // PreviewStatus.VAULT_EXPIRED
       expect(totalPremium).to.equal(0);
     });
   });
@@ -1144,7 +1298,7 @@ describe('OptionVault System', function () {
       const premiumPerUnit = ethers.parseUnits('150', 6);
       const minDeposit = ethers.parseEther('1');
       const maxDeposit = ethers.parseEther('10');
-      const validUntil = Math.floor(Date.now() / 1000) + 3600;
+      const validUntil = await getFutureTimestampHours(1);
       const amount = ethers.parseEther('2');
 
       // Create malformed signature (invalid format)
