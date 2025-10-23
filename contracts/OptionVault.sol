@@ -9,7 +9,7 @@ contract OptionVault is ERC20Initializable {
     using SafeERC20 for IERC20;
 
     IERC20 public depositToken;
-    IERC20 public exerciseToken;
+    IERC20 public conversionToken;
     IERC20 public premiumToken;
 
     uint256 public strike;
@@ -30,7 +30,7 @@ contract OptionVault is ERC20Initializable {
     function initialize(
         address _factory,
         address _depositToken,
-        address _exerciseToken,
+        address _conversionToken,
         address _premiumToken,
         uint256 _strike,
         uint256 _expiry,
@@ -40,7 +40,7 @@ contract OptionVault is ERC20Initializable {
     ) external initializer {
         factory = _factory;
         depositToken = IERC20(_depositToken);
-        exerciseToken = IERC20(_exerciseToken);
+        conversionToken = IERC20(_conversionToken);
         premiumToken = IERC20(_premiumToken);
         strike = _strike;
         expiry = _expiry;
@@ -58,9 +58,10 @@ contract OptionVault is ERC20Initializable {
     }
 
     function onExercise(address owner_, uint256 exerciseAmount, uint256 /* exerciseCost */) external onlyFactory {
-        // factory already transferred exerciseTokens in
+        // factory already transferred conversionTokens in
         if (block.timestamp >= expiry) revert Expired();
         depositToken.safeTransfer(owner_, exerciseAmount);
+        // Note: conversionTokens are already in the vault from factory transfer
     }
 
     function onRedeem(
@@ -76,15 +77,24 @@ contract OptionVault is ERC20Initializable {
         depShare = isLastUser
             ? depositToken.balanceOf(address(this))
             : (depositToken.balanceOf(address(this)) * burnAmount) / total;
-        exShare = isLastUser
-            ? exerciseToken.balanceOf(address(this))
-            : (exerciseToken.balanceOf(address(this)) * burnAmount) / total;
-        premShare = isLastUser
-            ? premiumToken.balanceOf(address(this))
-            : (premiumToken.balanceOf(address(this)) * burnAmount) / total;
+
+        // If conversionToken and premiumToken are the same, calculate combined share from total balance
+        if (conversionToken == premiumToken) {
+            uint256 combinedBalance = conversionToken.balanceOf(address(this));
+            uint256 combinedShare = isLastUser ? combinedBalance : (combinedBalance * burnAmount) / total;
+            exShare = combinedShare;
+            premShare = 0; // Set to 0 to avoid double transfer
+        } else {
+            exShare = isLastUser
+                ? conversionToken.balanceOf(address(this))
+                : (conversionToken.balanceOf(address(this)) * burnAmount) / total;
+            premShare = isLastUser
+                ? premiumToken.balanceOf(address(this))
+                : (premiumToken.balanceOf(address(this)) * burnAmount) / total;
+        }
 
         if (depShare > 0) depositToken.safeTransfer(user, depShare);
-        if (exShare > 0) exerciseToken.safeTransfer(user, exShare);
+        if (exShare > 0) conversionToken.safeTransfer(user, exShare);
         if (premShare > 0) premiumToken.safeTransfer(user, premShare);
     }
 }

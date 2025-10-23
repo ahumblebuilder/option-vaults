@@ -16,9 +16,11 @@ contract OptionVaultFactory is Ownable, EIP712 {
 
     address public immutable implementation;
     address[] public allVaults;
-    
+
     mapping(address => bool) internal _knownVaults;
-    
+    mapping(bytes32 => bool) internal _isUsed;
+
+    error AlreadyUsed();
     error UnknownVault();
     error BadSignature();
     error NotVaultOwner();
@@ -34,7 +36,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
     event VaultCreated(
         address indexed vault,
         address depositToken,
-        address exerciseToken,
+        address conversionToken,
         address premiumToken,
         uint256 strike,
         uint256 expiry
@@ -59,7 +61,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
 
     function createVault(
         address depositToken,
-        address exerciseToken,
+        address conversionToken,
         address premiumToken,
         uint256 strike,
         uint256 expiry,
@@ -71,7 +73,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
         OptionVault(vaultAddr).initialize(
             address(this),
             depositToken,
-            exerciseToken,
+            conversionToken,
             premiumToken,
             strike,
             expiry,
@@ -81,7 +83,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
         );
         allVaults.push(vaultAddr);
         _knownVaults[vaultAddr] = true;
-        emit VaultCreated(vaultAddr, depositToken, exerciseToken, premiumToken, strike, expiry);
+        emit VaultCreated(vaultAddr, depositToken, conversionToken, premiumToken, strike, expiry);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -98,28 +100,23 @@ contract OptionVaultFactory is Ownable, EIP712 {
         bytes calldata signature
     ) external {
         if (!_knownVaults[vault]) revert UnknownVault();
-        
+
         OptionVault v = OptionVault(vault);
         if (block.timestamp > validUntil) revert Expired();
 
         // recover signer using EIP712
-        bytes32 structHash = keccak256(
-            abi.encode(
-                WRITE_OPTION_TYPEHASH,
-                v.strike(),
-                v.expiry(),
-                premiumPerUnit,
-                minDeposit,
-                maxDeposit,
-                validUntil
-            )
+        (bytes32 digest, address signer) = computeWriteOptionHashAndRecover(
+            vault,
+            premiumPerUnit,
+            minDeposit,
+            maxDeposit,
+            validUntil,
+            signature
         );
-        bytes32 digest = _hashTypedDataV4(structHash);
-        address signer = digest.recover(signature);
+        if (_isUsed[digest]) revert AlreadyUsed();
         if (signer == address(0)) revert BadSignature();
 
-        // pull deposit tokens from user to vault
-        _pullTokens(v.depositToken(), msg.sender, vault, amount);
+        _isUsed[digest] = true;
 
         // send premium from signer to user
         uint256 premium = (premiumPerUnit * amount) / (10 ** ERC20(address(v.depositToken())).decimals());
@@ -127,13 +124,16 @@ contract OptionVaultFactory is Ownable, EIP712 {
 
         // mint receipts
         v.onWriteOption(msg.sender, amount);
+
+        // pull deposit tokens from user to vault
+        _pullTokens(v.depositToken(), msg.sender, vault, amount);
         emit OptionWritten(vault, msg.sender, signer, amount, premium);
     }
 
     /// @notice owner exercises through factory
     function exercise(address vault, uint256 exerciseAmount) external {
         if (!_knownVaults[vault]) revert UnknownVault();
-        
+
         OptionVault v = OptionVault(vault);
         if (msg.sender != v.owner()) revert NotVaultOwner();
         if (block.timestamp >= v.expiry()) revert Expired();
@@ -143,7 +143,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
         // cost is in exercise token (eg 1.5 * 1e18 * 4000 * 1e6 / 1e18 = 6000 usdc)
         uint256 cost = (exerciseAmount * v.strike()) / (10 ** ERC20(address(v.depositToken())).decimals());
 
-        _pullTokens(v.exerciseToken(), msg.sender, vault, cost);
+        _pullTokens(v.conversionToken(), msg.sender, vault, cost);
         v.onExercise(msg.sender, exerciseAmount, cost);
 
         emit Exercised(vault, exerciseAmount, cost);
@@ -152,7 +152,7 @@ contract OptionVaultFactory is Ownable, EIP712 {
     /// @notice users redeem via factory
     function redeem(address vault) external {
         if (!_knownVaults[vault]) revert UnknownVault();
-        
+
         OptionVault v = OptionVault(vault);
         uint256 userBal = v.balanceOf(msg.sender);
         if (userBal == 0) revert NoBalance();
@@ -170,6 +170,60 @@ contract OptionVaultFactory is Ownable, EIP712 {
 
     function isKnownVault(address vault) external view returns (bool) {
         return _knownVaults[vault];
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                            EIP712 HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Compute EIP712 hash for WriteOption message
+    /// @param vault The vault address
+    /// @param premiumPerUnit Premium per unit
+    /// @param minDeposit Minimum deposit amount
+    /// @param maxDeposit Maximum deposit amount
+    /// @param validUntil Timestamp until which the signature is valid
+    /// @return The EIP712 digest
+    function computeWriteOptionHash(
+        address vault,
+        uint256 premiumPerUnit,
+        uint256 minDeposit,
+        uint256 maxDeposit,
+        uint256 validUntil
+    ) public view returns (bytes32) {
+        OptionVault v = OptionVault(vault);
+        bytes32 structHash = keccak256(
+            abi.encode(
+                WRITE_OPTION_TYPEHASH,
+                v.strike(),
+                v.expiry(),
+                premiumPerUnit,
+                minDeposit,
+                maxDeposit,
+                validUntil
+            )
+        );
+        return _hashTypedDataV4(structHash);
+    }
+
+    /// @notice Compute EIP712 hash and recover signer from signature
+    /// @param vault The vault address
+    /// @param premiumPerUnit Premium per unit
+    /// @param minDeposit Minimum deposit amount
+    /// @param maxDeposit Maximum deposit amount
+    /// @param validUntil Timestamp until which the signature is valid
+    /// @param signature The signature to verify
+    /// @return digest The EIP712 digest
+    /// @return signer The recovered signer address
+    function computeWriteOptionHashAndRecover(
+        address vault,
+        uint256 premiumPerUnit,
+        uint256 minDeposit,
+        uint256 maxDeposit,
+        uint256 validUntil,
+        bytes calldata signature
+    ) public view returns (bytes32 digest, address signer) {
+        digest = computeWriteOptionHash(vault, premiumPerUnit, minDeposit, maxDeposit, validUntil);
+        signer = digest.recover(signature);
     }
 
     /*//////////////////////////////////////////////////////////////
